@@ -137,6 +137,46 @@ La saturation de la mémoire vive est souvent provoquée par un utilisateur qui 
     | Fichier `.xls`   | `read_excel()`   | `readxl`      | `n_max`   |
     | Fichier `.ods`   | `read_ods()`   | `readODS`      | `range`   |
 
+### Choisir les classes de colonne les plus économes
+
+Chaque colonne d'un `data.frame` a une classe qui sont plus ou moins gourmandes en mémoire. Grosso modo, dans `R`, les classes `integer`, `logical` et `factor` sont économes alors que les classes `numeric` et `character` prennent beaucoup de cases mémoires. Ainsi il est souvent recommandé de transformer une colonne de `character` en `factor` et de vérifier si une colonne de `numeric` ne peut pas être passée en `integer`. 
+
+### Eviter les valeurs manquantes inutiles
+
+Une valeur manquante prend la même place en mémoire qu'une valeur non manquante. Il faut donc chercher à ne pas en abuser. Une valeur est manquante  soit quand elle est en attente de remplissage (imputation statistique par exemple), soit quand la remplir serait absurde. Dans ce dernier cas, repenser la structure des bases peut être utile. Prenons une base individuelle contenant le nombre d'enfants de chacun et l'année de naissance des enfants. La structure de base suivante : 
+
+| id | nb_enfant | annee_naissance_enfant_1 |annee_naissance_enfant_2 | annee_naissance_enfant_3 | annee_naissance_enfant_4 |
+|-|-|-|-|-|-|
+| 1 | 4 | 1980 | 1982 | 1986 | 1990 |
+| 2 | 1 | 1986 | NA | NA | NA |
+| 3 | 0 | NA | NA | NA | NA |
+
+est problématique car, par exemple, la colonne `annee_naissance_enfant_4` aura beaucoup de valeurs manquantes et prendra beaucoup de place pour peu d'informations. 
+
+La même information peut se mettre en deux bases :
+
+* une individuelle réduite :
+
+| id | nb_enfant |
+|-|-|
+| 1 | 4 |
+| 2 | 1 | 
+| 3 | 0 |
+
+* une spécifique aux années de naissance des enfants :
+
+| id  | annee_naissance_enfant |
+|-|-|
+| 1 | 1980 |
+| 1 | 1982 |
+| 1 | 1986 |
+| 1 | 1990 |
+| 2 | 1986 |
+
+### Faire la chasse aux informations redondantes
+
+Le fait que la mémoire vive puisse contenir l'ensemble des données permet d'accélérer les calculs. C'est pourquoi il est souvent préférable de réduire la taille de la base pour qu'elle puisse tenir dans la mémoire vive, même si c'est au prix de quelques calculs supplémentaires. Voici un exemple: supposons qu'on ait une colonne `date_naissance` qui soit au format `Date` et que, très souvent, on ait besoin de l'année naissance ou du mois de naissance de l'individu. Créer les colonnes `annee_naissance = year(date_naissance)` et `mois_naissance = month(date_naissance)` peut être tentant mais bien souvent la consommation supplémentaire de mémoire vive associée à ces deux nouvelles colonnes sera plus coûteuse que devoir réécrire à chaque fois `year(date_naissance)`, quitte à demander plusieurs fois à `R` de refaire ce petit calcul. 
+
 ### Faire preuve de prudence en faisant des jointures
 
 Un autre cas standard de saturation de la mémoire vive provient d'une erreur dans la réalisation d'une jointure entre deux tables. En effet, une jointure mal réalisée peut aboutir à une table d'une taille largement supérieure à celle
