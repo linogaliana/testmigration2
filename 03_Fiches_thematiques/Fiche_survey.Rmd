@@ -8,7 +8,8 @@ L'utilisateur souhaite exploiter des données d'enquête pour calculer des indic
 * Pour calculer des indicateurs nécessitant l'usage des pondérations, il est recommandé d'utiliser les _packages_ `stats` et `Hmisc` ;
 * Pour des estimations qui prendraient en compte de manière formelle la théorie des sondages (en particulier pour l'estimation de la variance), il est conseillé d'utiliser le _package_ `survey` ;
 * Le package `survey` fonctionne dans des conditions particulières (plan de sondage simple, ou poids _bootstrap_). L'utilisateur pourra se référer au _package_ `gustave` pour les enquêtes de l'Insee ;
-* S'agissant de l'estimation économétrique, les fonctions d'estimation offrent généralement une option `weight`. Par ailleurs, le _package_ `survey` contient la fonction `svyglm` qui permet l'estimation des modèles les plus courants.
+* S'agissant de l'estimation économétrique, les fonctions d'estimation offrent généralement une option `weight`. Par ailleurs, le _package_ `survey` contient la fonction `svyglm` qui permet l'estimation des modèles les plus courants ;
+* Le calage sur marge nécessite le _package_ `icarus`.
 :::
 
 ## Pourquoi l'usage des données d'enquêtes est-il particulier ?
@@ -127,6 +128,102 @@ L'utilisateur qui souhaite avoir un usage avancé des données d'enquêtes, et e
 
 * il travaille sur un jeu de données d'enquêtes avec des poids répliqués, qui synthétisent _de facto_ l'intégralité des étapes dans le processus de sondage, et dans ce cas, le _package_ `survey` est adapté ;
 * il doit estimer la variance de manière analytique - comme c'est généralement le cas dans les enquêtes de l'Insee - et dans ce cas, c'est le _package_ `gustave` qui sera le plus adapté à son besoin.
+
+## Le calage sur marge avec `icarus`
+
+### Fonctionnement
+
+Le calage sur marge dans `R` s'effectue avec le paquet `icarus`.
+
+Partant d'une base avec des individus ayant une colonne `poids`, il y a deux types de marges : 
+
+  * soit sur une colonne numérique sans modalités dont on souhaite fixer la somme pondérée
+  * soit sur une colonne à modalités dont on souhaite fixer la somme pondérée pour chaque modalité
+
+Pour le premier cas on crée la marge ainsi :
+```{r, eval = FALSE}
+  mar1 <- c("nom_variable", 0, somme_ponderee_cible)
+```
+Le `0` en deuxième argument sert à indiquer qu'il ne s'agit pas d'une variable à modalité.
+
+Pour le second cas, la syntaxe est la suivante, par exemple pour trois modalités :
+
+```{r, eval = FALSE}
+mar2 <- c("nom_variable", 3, somme_ponderee_modalite1, somme_ponderee_modalite2, somme_ponderee_modalite3)
+```
+
+Le `3` est le nombre de modalités.
+
+::: {.remarque}
+En vérité la distinction entre les deux cas est un peu factice. L'algorithme commence par transformer tous les cas en modalités par des cas de colonne sans modalités.
+Pour une base :
+
+| id | poids | sexe |
+|-|-|-|
+|1|10|H|
+|2|11|H|
+|3|9|F|
+|4|12|F|
+
+dont on veut fixer la population de chaque sexe, la première étape de calcul de `icarus::calibration` est de faire la transformation suivante :
+
+| id | poids | estHomme | estFemme |
+|-|-|-|-|
+|1|10|1|0|
+|2|11|1|0|
+|3|9|0|1|
+|4|12|0|1|
+
+et de traiter les nouvelles colonnes comme des variables sans modalités. Il s'agit bien d'un calage sur 2 marges et pas sur une seule.
+:::
+
+On peut alors regrouper toutes les marges grâce à un `rbind` :
+```{r, eval=FALSE}
+marges<-rbind(mar1, mar2, etc., fill=TRUE)
+```
+et lancer le calage :
+```{r, eval=FALSE}
+nouveaux_poids<-
+  icarus::calibration(
+    data = ma_base,
+    marginMatrix = marges,
+    colWeights = "poids")
+```
+On obtient le vecteur de nouveaux poids que l'on peut insérer dans la base `ma_base$nouveaux_poids<-nouveaux_poids`.
+
+Par défaut le calage sur marge avec la méthode linéaire est effectué. Pour d'autres méthodes, changer l'argument `method` en "raking", "logit" ou "truncated". Pour les méthodes introduisant des bornes max et min, les entrer dans l'argument `bounds = c(borne_min, borne_max)`. D'autres paramètres sont réglables, voir l'aide complète `?icarus::calibration`.
+Mettre `description = TRUE` permet d'obtenir des graphiques représentant la déformation des poids.
+
+
+
+### Calage sur marge et problèmes de RAM
+
+La calage sur marge utilise un algorithme de Newton. Il nécessite donc l'inversion, possiblement plusieurs fois, d'une matrice nombre_de_marges*nombre_de_marges. Il est possible qu'un nombre élevé de marges conduise à une saturation de la RAM. On peut alors envisager de décomposer le processus. Commencer par caler sur un nombre de marges raisonnable `marges1` par rapport à la machine et regarder l'écart entre les poids initiaux et les finals, par exemple en calculant l'écart quadratique moyen :
+```{r, eval = FALSE}
+nouveaux_poids<-
+  icarus::calibration(
+    data = ma_base,
+    marginMatrix = marges1,
+    colWeights = "poids")
+
+epsilon<-mean((ma_base$poids-nouveaux_poids)^2)
+print(epsilon)
+```
+Si maintenant on cale sur d'autres marges `marge2`, 
+```{r, eval = FALSE}
+ma_base$nouveaux_poids<-nouveaux_poids
+nouveaux_poids2<-
+  icarus::calibration(
+    data = ma_base,
+    marginMatrix = marges2,
+    colWeights = "nouveaux_poids")
+
+epsilon<-mean((ma_base$nouveaux_poids-nouveaux_poids2)^2)
+print(epsilon)
+```
+sauf cas problématiques, on devrait obtenir un `epsilon` plus faible : le deuxième calage a moins fait bouger les poids que le premier, autrement dit les marges `marge1` déforment les poids à peu près dans la même direction que les marges `marge2`. 
+L'opération peut alors être itérée jusqu'à obtenir un `epsilon` suffisamment faible.
+
 
 ## Pour en savoir plus {#RessourcesSurvey}
 
