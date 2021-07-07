@@ -1,0 +1,279 @@
+# Réaliser des représentations cartographiques en `R`
+
+## Tâches concernées et recommandations
+
+L'utilisateur souhaite réaliser des représentations cartographiques en `R`.
+
+::: recommandation
+**Recommandations de l'Insee**
+
+* les *packages* `tmap` ou `cartography` pour réaliser rapidement des cartes d'étude;
+* les *packages* `leaflet` et `mapview` pour la cartographie dynamique (cartes `html` dans lesquelles on peut se déplacer).
+:::
+
+## Données spatiales: kesako ?
+
+`R` dispose de fonctionnalités graphiques avancées qui permettent de représenter des données sous forme de cartes. `R` peut agir comme un système d'information géographique (SIG), c'est à dire un système capable de stocker, organiser et présenter des données alphanumériques spatialement référencées par des coordonnées dans un système de référence (CRS). Une base de données spatiales est, en `R`, une base de données traditionnelle (de type `dataframe`) enrichie d'une géométrie qui permet une représentation dans un espace euclidien ($(x,y)$). Cette géométrie peut prendre la forme de points, de polygones, etc. Le passage de l'espace plan à l'espace réel (la terre, qui est une sphère) se fait grâce à un système de projection. 
+
+Pour réaliser ce type de travaux, il est nécessaire de disposer de 2 *types* de données :
+
+1. des **données géographiques** : objets géométriques tels que des points, des vecteurs, des polygones, ... ou des maillages (*raster*) ;
+2. des **données attributaires** : des mesures à représenter sur les cartes.
+
+L'Insee propose un outil pour sélectionner et télécharger des données géographiques : [Créacarte](http://creacartes.insee.fr/).
+
+
+Seuls les *packages* `sf` et `tmap` seront abordés dans cette documentation. Pour l'analyse de données spatiales, se référer à {#spatdata}.
+
+## Manier des données géographiques avec `sf`
+
+Nous verrons succéssivement comment :
+
+1. importer et exporter des données géographiques (fonds cartographiques) ;
+2. tracer rapidement des cartes ;
+3. manipuler des objets cartographiques (extractions, projections, relations topologiques)
+
+### Importer et exporter des fonds cartographiques
+
+La fonction `st_read()` permet de lire (importer) plusieurs formats de données géographiques (shapefile, autres).
+
+Les paramètres attendus par la fonction varient en fonction du type de données :
+
+* `dsn`, data source name : le chemin + nom du fichier (parfois juste le répertoire)
+* `layer`, le nom de la couche (facultatif)
+
+```{r, eval=FALSE}
+library("sf")
+mon_objet_geo <- sf::st_read("/repertoire/vers/fonds_carto.shp")
+```
+
+A titre d'exemple, nous chargeons un jeu de données inclus dans le *package* `sf`.
+
+```{r}
+nc <- sf::st_read(system.file("shape/nc.shp", package="sf"),
+                  quiet=TRUE)
+```
+
+La fonction `sf_write` permet de gérer l'export des objets géographiques. Voir `help("st_write", package="sf")`.
+
+### Tracer une carte
+
+La fonction générique `plot` permet de tracer rapidement des cartes.
+
+1. Représenter toutes les variables
+
+```{r, eval=TRUE}
+plot(nc)
+```
+
+2. Juste la géométrie
+
+```{r, eval=TRUE}
+plot(sf::st_geometry(nc))
+```
+
+3. Une variable
+
+```{r, eval=TRUE}
+plot(nc["BIR74"])
+```
+
+### Manipuler des données cartographiques
+
+Il est fréquent de devoir opérer des traitements sur les fonds importés. Il est parfois nécessaire d'en extraire une portion. Pour cela, on utilise l'opérateur `[` et une condition logique (si la table attributaire le permet). Nous voyons ci-dessous comment extraire les pays du continent européen parmi l'ensemble des pays du monde.
+
+1. Extraire des sous ensemble d'une carte
+
+```{r, eval=TRUE}
+data("World", package = "tmap")
+europe <- World[World$continent == "Europe", ]
+plot(sf::st_geometry(europe), graticule=T, axes=T)
+```
+
+2. Transformations / projections
+
+Afin de représenter la terre sur une surface plate (la carte), il est nécessaire de déterminer une projection. Pour de plus amples détails sur le sujet, voir [ce tutoriel de l'IGN](http://education.ign.fr/sites/all/files/geodesie_projections.pdf).
+
+Pour consulter le CRS (*coordinate reference system*) d'un objet spatial, on utilise la fonction `st_crs`.
+
+```{r, eval=TRUE}
+sf::st_crs(europe)
+```
+
+La fonction retourne plusieurs informations :
+
+* le code EPSG, s'il est connu
+* le nom de la projection dans le format `proj4string`.
+
+Il est également possible de modifier la projection d'une carte grâce à la fonction `sf::st_transform`. Cette fonction attend 2 paramètres :
+
+* `x`: un objet de classe `sf`
+* `crs` : coordinate reference system. Un entier correspondant au code [EPSG](http://www.epsg.org/) ou une chaine de caractère pour le [`proj4string`](https://spatialreference.org/).
+
+```{r, eval=TRUE}
+
+plot(sf::st_geometry(europe),
+		 main=sf::st_crs(europe)[[2]],
+		 cex.main = 0.8,
+		 axes=TRUE,
+		 graticule=TRUE)
+
+europe_LAEA <- sf::st_transform(europe, 3035)
+
+plot(sf::st_geometry(europe_LAEA),
+		 main=sf::st_crs(europe_LAEA)[[2]],
+		 cex.main = 0.8,
+		 axes=TRUE,
+		 graticule=TRUE)
+
+```
+
+3. Relations topologiques
+
+Les [relations topologiques](https://github.com/rugbyprof/4553-Spatial-DS/wiki/Topological-Relationships) sont l'adjacence (ou contiguïté), la connectivité, l'inclusion et l'intersection. La liste des fonctions de se type s'obtient *via* la commande `help("geos_binary_pred")`.
+
+```{r, eval=TRUE, echo=FALSE}
+help_console <- function(topic, format=c("text", "html", "latex", "Rd"),
+                         lines=NULL, before=NULL, after=NULL) {  
+  format=match.arg(format)
+  if (!is.character(topic)) topic <- deparse(substitute(topic))
+  helpfile = utils:::.getHelpFile(help(topic))
+
+  hs <- capture.output(switch(format, 
+                              text=tools:::Rd2txt(helpfile),
+                              html=tools:::Rd2HTML(helpfile),
+                              latex=tools:::Rd2latex(helpfile),
+                              Rd=tools:::prepare_Rd(helpfile)
+                              )
+                      )
+  if(!is.null(lines)) hs <- hs[lines]
+  hs <- c(before, hs, after)
+  cat(hs, sep="\n")
+  invisible(hs)
+}
+```
+
+```{r, echo=FALSE, results="asis"}
+help_console(topic="geos_binary_pred", format="html", lines=c(7:46))
+```
+
+Ces fonctions servent notamment pour analyser les relations entre plusieurs couches de données. A titre d'exemple, elles permettent de répondre aux problématiques suivantes :
+
+* combien de ménages résident dans une zone urbaine sensible
+
+* quelles sont les communes situées à moins de 30 mètres d'une zone inondable
+
+* ...
+
+A partir d'un certain niveau de complexité, l'utilisation d'une base de données spatiale de type `PostGIS` et l'usage du SQL est recommandé (dur de recommander cela, sachant que ce n'est pas encore possible).
+
+4. Rogner une carte
+
+Lorsqu'on souhaite centrer une carte sur une zone particulière, ou simplement supprimer une partie de la carte, il faut utiliser la fonction `sf::st_crop`. Il est recommandé, dans un premier temps, d'observer les limites de la carte avec `sf::st_bbox`.
+
+```{r, eval=TRUE}
+sf::st_bbox(europe_LAEA)
+
+ma_zone <- c(xmin=2555000,
+						 xmax=7500000,
+						 ymin=800000,
+						 ymax=5500000)
+
+europe_centree <- sf::st_crop(europe_LAEA, ma_zone)
+
+plot(sf::st_geometry(europe_centree), graticule=TRUE, axes=TRUE)
+```
+
+5. Tracer une carte avec `ggplot2`
+
+`ggplot2` permet également de tracer une carte, et d'ajuster de nombreux paramètres graphiques (labels, couleurs, titres, ...).
+
+```{r, eval=TRUE}
+
+lon <- sf::st_coordinates(sf::st_centroid(sf::st_geometry(europe_centree)))[, 1]
+lat <- sf::st_coordinates(sf::st_centroid(sf::st_geometry(europe_centree)))[, 2]
+mybreaks <- c(1000000, 20000000, 50000000, 100000000)
+
+g1 <- ggplot2::ggplot(data=europe_centree) +
+	ggplot2::geom_sf() +
+	ggplot2::geom_point(aes(x=lon, y=lat, size=pop_est))
+
+g1 +
+	ggplot2::scale_size_continuous(name="Population estimée", range=c(1,10), breaks=mybreaks) +
+	ggplot2::ggtitle(label = "Population estimée en xxxx", subtitle = "Source : World dataset") +
+  ggplot2::theme(panel.background = element_rect(fill = "#a3d9f3"))
+
+```
+
+Dans cet exemple, la combinaison des fonctions `sf::st_coordinates` et `sf::st_centroid` permet d'extraire les centroïdes des polygones, afin de déterminer l'emplacement des symboles.
+
+## `tmap`
+
+`tmap` fonctionne selon l'approche *layered grammar of graphic (LGG)*, c'est à dire un système de couches superposées respectant une grammaire déterminée (comme `ggplot2`). `tmap` est également compatible avec la syntaxe `tidyverse`. 
+
+Ce *package* permet de réaliser différent type de cartes :
+
+* cartes choroplètes
+* cartes catégorielles
+* cartes à symboles proportionnels
+* cartes isoplèthes ou à contour
+* ...
+
+### Carte choroplète
+
+```{r, eval = TRUE}
+library("tmap")
+data("World", package = "tmap")
+
+tmap::tm_shape(World) +
+	tmap::tm_polygons("HPI")
+```
+
+### Symboles proportionnels
+
+```{r, eval=TRUE}
+tmap::tm_shape(World) +
+	tmap::tm_polygons() +
+	tmap::tm_bubbles("pop_est")
+```
+
+### Combiner plusieurs objets spatiaux et plusieurs couches
+
+```{r, eval=TRUE}
+data("metro", package = "tmap")
+
+tmap::tm_shape(World) +
+	tmap::tm_polygons("HPI") +
+tmap::tm_shape(metro) +
+	tmap::tm_symbols(col = "red", size = "pop2020", scale = 1)
+
+```
+
+### Exporter une carte
+
+L'export des cartes se réalise *via* la fonction `tmap::tm_save`.
+
+## Cartographie dynamique
+
+TODO
+
+## R + PostGIS
+
+TODO
+
+## Ressources {#RessourcesCARTO}
+
+* la task view [Analysis of Spatial Data du CRAN](https://cran.r-project.org/web/views/Spatial.html)
+* la [vignette du *packages* sf](https://cran.r-project.org/web/packages/sf/vignettes/sf1.html)
+* la [vignette du *package* tmap](https://cran.r-project.org/web/packages/tmap/vignettes/tmap-getstarted.html)
+* l'article du [JSS : `tmap`: Thematic Maps in `R`](https://www.jstatsoft.org/index.php/jss/article/view/v084i06/v84i06.pdf)
+* la [*cheatsheets* de sf](https://github.com/rstudio/cheatsheets/raw/master/sf.pdf)
+* la [*cheatsheets* de leaflet](https://github.com/rstudio/cheatsheets/raw/master/leaflet.pdf)
+* le site internet du livre [Geocomputation with `R`](https://geocompr.robinlovelace.net/)
+* le site internet du livre [Spatial Data Science](https://keen-swartz-3146c4.netlify.com/)
+* le site internet [R géomatique](https://rgeomatic.hypotheses.org/category/cartography)
+* le site internet [du MTES](https://mtes-mct.github.io/parcours-r/m5/creer-des-cartes-avec-ggplot2-et-tmap.html)
+* [Manuel d’analyse spatiale - Théorie et mise en oeuvre pratique avec R, Insee Méthodes n° 131 - octobre 2018](https://www.insee.fr/fr/information/3635442)
+* [Guide de sémiologie cartographique, Documents de travail N° H2018/04](https://www.insee.fr/fr/statistiques/3640429)
+* Lien vers [documentation IGN](https://geodesie.ign.fr/?p=61&page=documentation#titre1)
+
